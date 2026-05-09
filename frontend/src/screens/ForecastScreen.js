@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getQualityColor, getQualityLabel, formatTime, azimuthToCompass } from '../utils/formatting';
+import MapComponent from '../components/MapComponent';
 
 export default function ForecastScreen({ route }) {
   const { forecast, location } = route.params || {};
@@ -23,6 +24,16 @@ export default function ForecastScreen({ route }) {
       <View style={styles.header}>
         <Text style={styles.location}>{location?.name || 'Location'}</Text>
         <Text style={styles.date}>{forecast.date}</Text>
+      </View>
+
+      <View style={styles.mapSection}>
+        <MapComponent
+          latitude={location?.latitude || 0}
+          longitude={location?.longitude || 0}
+          locationName={location?.name || 'Location'}
+          sunrise={forecast.sunrise}
+          sunset={forecast.sunset}
+        />
       </View>
 
       <View style={[styles.qualityBadge, { backgroundColor: qualityColor + '20' }]}>
@@ -206,6 +217,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5E6',
     borderBottomWidth: 1,
     borderBottomColor: '#FFE8CC',
+  },
+  mapSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   location: {
     fontSize: 20,

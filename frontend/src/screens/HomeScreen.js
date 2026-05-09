@@ -1,16 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useFocusEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import LocationSearch from '../components/LocationSearch';
 import DatePicker from '../components/DatePicker';
 import { fetchForecast, reverseGeocode } from '../utils/api';
+import { saveFavorite } from '../utils/storage';
 
 export default function HomeScreen({ navigation }) {
   const [location, setLocation] = useState(null);
   const [date, setDate] = useState(getTodayDate());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showSaveButton, setShowSaveButton] = useState(false);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const unsubscribe = navigation.addListener('blur', () => {
+        setShowSaveButton(false);
+      });
+      return unsubscribe;
+    }, [navigation])
+  );
 
   const handleLocationSelect = (loc) => {
     setLocation(loc);
@@ -66,12 +77,24 @@ export default function HomeScreen({ navigation }) {
     setLoading(false);
 
     if (result.success) {
+      setShowSaveButton(true);
       navigation.navigate('Forecast', {
         forecast: result.data,
         location: location,
       });
     } else {
       setError(result.error || 'Failed to fetch forecast');
+    }
+  };
+
+  const handleSaveLocation = async () => {
+    if (!location) return;
+    const result = await saveFavorite(location);
+    if (result.success) {
+      Alert.alert('Saved', `"${location.name}" has been saved to your favorites`);
+      setShowSaveButton(false);
+    } else {
+      Alert.alert('Error', result.error);
     }
   };
 
@@ -131,6 +154,16 @@ export default function HomeScreen({ navigation }) {
             </>
           )}
         </TouchableOpacity>
+
+        {showSaveButton && location && (
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={handleSaveLocation}
+          >
+            <Ionicons name="heart" size={20} color="#fff" />
+            <Text style={styles.saveButtonText}>Save Location</Text>
+          </TouchableOpacity>
+        )}
 
         <Text style={styles.footer}>Forecasts available up to 7 days ahead</Text>
       </View>
@@ -254,6 +287,20 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   searchButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  saveButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveButtonText: {
     color: '#fff',
     fontWeight: '600',
     fontSize: 16,
