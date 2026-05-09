@@ -1,0 +1,31 @@
+{
+  "name": "sunsetchasers-backend",
+  "version": "0.1.0",
+  "description": "Backend API for Sunset Chasers photographer forecast app",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest --verbose",
+    "dev": "node src/index.js"
+  },
+  "keywords": [
+    "astronomy",
+    "sunrise",
+    "sunset",
+    "forecast",
+    "photographer"
+  ],
+  "author": "Johnny T",
+  "license": "MIT",
+  "dependencies": {
+    "astronomy-engine": "^2.1.8",
+    "axios": "^1.4.0",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "geo-tz": "^7.0.3",
+    "suncalc": "^1.9.0"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0"
+  }
+}
