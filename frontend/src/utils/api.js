@@ -4,10 +4,33 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/a
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000,
 });
 
-export async function fetchForecast(latitude, longitude, date) {
+const MAX_RETRIES = 2;
+
+export async function fetchForecast(latitude, longitude, date, retryCount = 0) {
+  if (!latitude || !longitude || !date) {
+    return {
+      success: false,
+      error: 'Missing required parameters',
+    };
+  }
+
+  if (latitude < -90 || latitude > 90) {
+    return {
+      success: false,
+      error: 'Invalid latitude: must be between -90 and 90',
+    };
+  }
+
+  if (longitude < -180 || longitude > 180) {
+    return {
+      success: false,
+      error: 'Invalid longitude: must be between -180 and 180',
+    };
+  }
+
   try {
     const response = await apiClient.post('/forecast', {
       latitude,
@@ -20,16 +43,39 @@ export async function fetchForecast(latitude, longitude, date) {
       data: response.data,
     };
   } catch (error) {
+    if (retryCount < MAX_RETRIES && error.code === 'ECONNABORTED') {
+      return fetchForecast(latitude, longitude, date, retryCount + 1);
+    }
+
     let errorMessage = 'Failed to fetch forecast';
-    if (error.response?.data?.message) {
+    let statusCode = null;
+
+    if (error.response?.status === 422) {
+      errorMessage = error.response.data?.message || 'Date is out of range (must be within 7 days)';
+      statusCode = 422;
+    } else if (error.response?.status === 400) {
+      errorMessage = error.response.data?.message || 'Invalid request parameters';
+      statusCode = 400;
+    } else if (error.response?.status === 500) {
+      errorMessage = 'Server error. Please try again later.';
+      statusCode = 500;
+    } else if (error.code === 'ECONNREFUSED') {
+      errorMessage = 'Could not connect to server. Is the API running?';
+    } else if (error.code === 'ENOTFOUND') {
+      errorMessage = 'Server not found. Check your API URL.';
+    } else if (error.message?.includes('timeout')) {
+      errorMessage = 'Request timed out. Please try again.';
+    } else if (error.response?.data?.message) {
       errorMessage = error.response.data.message;
     } else if (error.message) {
       errorMessage = error.message;
     }
+
     return {
       success: false,
       error: errorMessage,
       code: error.response?.data?.code,
+      statusCode,
     };
   }
 }
