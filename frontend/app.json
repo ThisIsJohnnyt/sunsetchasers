@@ -1,19 +1,26 @@
 {
   "expo": {
-    "name": "Sunset Forecast",
-    "slug": "sunset-forecast",
+    "name": "Sunset Chasers",
+    "slug": "sunset-chasers-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sunsetchaser",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
+
     "plugins": [
-      "expo-location",
+      "expo-router",
       [
-        "react-native-maps",
+        "expo-splash-screen",
         {
-          "MapsDisplayLatLng": true
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
         }
       ]
     ],
@@ -42,24 +49,15 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-    "plugins": [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
-        }
-      ]
-    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "551a6a99-0cee-4364-9a0a-3264bd8d2b33"
+      }
     }
   }
 }
