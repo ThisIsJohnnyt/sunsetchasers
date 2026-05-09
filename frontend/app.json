@@ -10,7 +10,6 @@
     "newArchEnabled": true,
 
     "plugins": [
-      "expo-router",
       [
         "expo-splash-screen",
         {
@@ -22,7 +21,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-location"
     ],
     "ios": {
       "supportsTablet": true,
@@ -49,12 +49,7 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-    "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
-    },
     "extra": {
-      "router": {},
       "eas": {
         "projectId": "551a6a99-0cee-4364-9a0a-3264bd8d2b33"
       }
