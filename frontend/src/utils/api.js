@@ -10,7 +10,7 @@ const apiClient = axios.create({
 const MAX_RETRIES = 2;
 
 export async function fetchForecast(latitude, longitude, date, retryCount = 0) {
-  if (!latitude || !longitude || !date) {
+  if (latitude == null || longitude == null || !date) {
     return {
       success: false,
       error: 'Missing required parameters',
@@ -83,16 +83,11 @@ export async function fetchForecast(latitude, longitude, date, retryCount = 0) {
 export async function reverseGeocode(latitude, longitude) {
   try {
     const response = await axios.get(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
+      { timeout: 5000 }
     );
     return response.data.address?.city || response.data.address?.town || 'Unknown Location';
   } catch (error) {
     return 'Location';
   }
-}
-
-export function formatCoordinates(lat, lon) {
-  const latDir = lat >= 0 ? 'N' : 'S';
-  const lonDir = lon >= 0 ? 'E' : 'W';
-  return `${Math.abs(lat).toFixed(2)}°${latDir}, ${Math.abs(lon).toFixed(2)}°${lonDir}`;
 }

@@ -66,8 +66,6 @@ export default function MapComponent({ latitude, longitude, locationName, sunris
 
 function SunPositionIndicator({ azimuth, type, time }) {
   const color = type === 'sunrise' ? '#FFA500' : '#FF6B6B';
-  const rotationAngle = azimuth - 90;
-
   const centerX = SCREEN_WIDTH / 2;
   const centerY = MAP_HEIGHT / 2;
   const lineLength = 80;

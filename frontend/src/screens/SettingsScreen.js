@@ -1,6 +1,7 @@
-import React, { useState, useFocusEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { getSettings, saveSettings } from '../utils/storage';
 
 export default function SettingsScreen() {
@@ -9,7 +10,7 @@ export default function SettingsScreen() {
   const [distanceUnit, setDistanceUnit] = useState('km');
 
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       loadSettings();
     }, [])
   );

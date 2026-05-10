@@ -1,35 +1,30 @@
-import React, { useState, useFocusEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import LocationSearch from '../components/LocationSearch';
 import DatePicker from '../components/DatePicker';
 import { fetchForecast, reverseGeocode } from '../utils/api';
 import { saveFavorite } from '../utils/storage';
+import { formatDate } from '../utils/formatting';
 
 export default function HomeScreen({ navigation }) {
   const [location, setLocation] = useState(null);
-  const [date, setDate] = useState(getTodayDate());
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showSaveButton, setShowSaveButton] = useState(false);
 
   useFocusEffect(
-    React.useCallback(() => {
-      const unsubscribe = navigation.addListener('blur', () => {
-        setShowSaveButton(false);
-      });
-      return unsubscribe;
-    }, [navigation])
+    useCallback(() => {
+      return () => setShowSaveButton(false);
+    }, [])
   );
 
   const handleLocationSelect = (loc) => {
     setLocation(loc);
     setError(null);
-  };
-
-  const handleDateSelect = (selectedDate) => {
-    setDate(selectedDate);
   };
 
   const handleGPSLocation = async () => {
@@ -38,19 +33,12 @@ export default function HomeScreen({ navigation }) {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission Denied', 'Location permission is required');
-        setLoading(false);
         return;
       }
-
       const gpsLocation = await Location.getCurrentPositionAsync({});
       const { latitude, longitude } = gpsLocation.coords;
-
       const city = await reverseGeocode(latitude, longitude);
-      setLocation({
-        name: city,
-        latitude,
-        longitude,
-      });
+      setLocation({ name: city, latitude, longitude });
       setError(null);
     } catch (err) {
       Alert.alert('Error', 'Could not get your location');
@@ -64,26 +52,22 @@ export default function HomeScreen({ navigation }) {
       setError('Please select a location');
       return;
     }
-    if (!date) {
-      setError('Please select a date');
-      return;
-    }
 
     setLoading(true);
     setError(null);
 
-    const result = await fetchForecast(location.latitude, location.longitude, date);
-
-    setLoading(false);
-
-    if (result.success) {
-      setShowSaveButton(true);
-      navigation.navigate('Forecast', {
-        forecast: result.data,
-        location: location,
-      });
-    } else {
-      setError(result.error || 'Failed to fetch forecast');
+    try {
+      const result = await fetchForecast(location.latitude, location.longitude, date);
+      if (result.success) {
+        setShowSaveButton(true);
+        navigation.navigate('Forecast', { forecast: result.data, location });
+      } else {
+        setError(result.error || 'Failed to fetch forecast');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -124,13 +108,11 @@ export default function HomeScreen({ navigation }) {
 
         <View style={styles.section}>
           <Text style={styles.label}>Date</Text>
-          <DatePicker onDateSelect={handleDateSelect} />
-          {date && (
-            <View style={styles.selectedDate}>
-              <Ionicons name="calendar" size={16} color="#4CAF50" />
-              <Text style={styles.selectedDateText}>{formatDate(date)}</Text>
-            </View>
-          )}
+          <DatePicker onDateSelect={setDate} />
+          <View style={styles.selectedDate}>
+            <Ionicons name="calendar" size={16} color="#4CAF50" />
+            <Text style={styles.selectedDateText}>{formatDate(date)}</Text>
+          </View>
         </View>
 
         {error && (
@@ -156,10 +138,7 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
 
         {showSaveButton && location && (
-          <TouchableOpacity
-            style={styles.saveButton}
-            onPress={handleSaveLocation}
-          >
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveLocation}>
             <Ionicons name="heart" size={20} color="#fff" />
             <Text style={styles.saveButtonText}>Save Location</Text>
           </TouchableOpacity>
@@ -171,53 +150,14 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-function getTodayDate() {
-  const today = new Date();
-  return today.toISOString().split('T')[0];
-}
-
-function formatDate(dateStr) {
-  const date = new Date(dateStr + 'T00:00:00');
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  content: {
-    padding: 16,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-    marginTop: 16,
-  },
-  headerText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 12,
-  },
-  headerSubtext: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
-  },
+  container: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16 },
+  header: { alignItems: 'center', marginBottom: 32, marginTop: 16 },
+  headerText: { fontSize: 28, fontWeight: 'bold', color: '#333', marginTop: 12 },
+  headerSubtext: { fontSize: 14, color: '#666', marginTop: 4 },
+  section: { marginBottom: 24 },
+  label: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 10 },
   gpsButton: {
     flexDirection: 'row',
     backgroundColor: '#FF8C42',
@@ -227,12 +167,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  gpsButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-    marginLeft: 8,
-  },
+  gpsButtonText: { color: '#fff', fontWeight: '600', fontSize: 14, marginLeft: 8 },
   selectedLocation: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -242,11 +177,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 8,
   },
-  selectedLocationText: {
-    color: '#4CAF50',
-    fontWeight: '500',
-    marginLeft: 8,
-  },
+  selectedLocationText: { color: '#4CAF50', fontWeight: '500', marginLeft: 8 },
   selectedDate: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -255,11 +186,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F9F4',
     borderRadius: 8,
   },
-  selectedDateText: {
-    color: '#4CAF50',
-    fontWeight: '500',
-    marginLeft: 8,
-  },
+  selectedDateText: { color: '#4CAF50', fontWeight: '500', marginLeft: 8 },
   errorBox: {
     flexDirection: 'row',
     backgroundColor: '#FFE6E6',
@@ -269,11 +196,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     alignItems: 'center',
   },
-  errorText: {
-    color: '#FF6B6B',
-    marginLeft: 8,
-    flex: 1,
-  },
+  errorText: { color: '#FF6B6B', marginLeft: 8, flex: 1 },
   searchButton: {
     backgroundColor: '#FF8C42',
     borderRadius: 8,
@@ -283,15 +206,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginVertical: 24,
   },
-  searchButtonDisabled: {
-    opacity: 0.6,
-  },
-  searchButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
-    marginLeft: 8,
-  },
+  searchButtonDisabled: { opacity: 0.6 },
+  searchButtonText: { color: '#fff', fontWeight: '600', fontSize: 16, marginLeft: 8 },
   saveButton: {
     backgroundColor: '#4CAF50',
     borderRadius: 8,
@@ -300,16 +216,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
-    marginLeft: 8,
-  },
-  footer: {
-    textAlign: 'center',
-    color: '#999',
-    fontSize: 12,
-    marginTop: 16,
-  },
+  saveButtonText: { color: '#fff', fontWeight: '600', fontSize: 16, marginLeft: 8 },
+  footer: { textAlign: 'center', color: '#999', fontSize: 12, marginTop: 16 },
 });

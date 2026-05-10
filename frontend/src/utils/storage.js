@@ -15,6 +15,12 @@ export async function saveFavorite(location) {
     if (favorites.length >= 5) {
       return { success: false, error: 'Maximum 5 saved locations' };
     }
+    const duplicate = favorites.some(
+      f => f.latitude === location.latitude && f.longitude === location.longitude
+    );
+    if (duplicate) {
+      return { success: false, error: 'Location already saved' };
+    }
     const updated = [...favorites, { ...location, id: Date.now() }];
     await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
     return { success: true };

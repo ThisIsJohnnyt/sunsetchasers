@@ -1,24 +1,25 @@
-import React, { useState, useFocusEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { getFavorites, removeFavorite } from '../utils/storage';
 
 export default function SavedScreen({ navigation }) {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      loadFavorites();
-    }, [])
-  );
-
-  const loadFavorites = async () => {
+  const loadFavorites = useCallback(async () => {
     setLoading(true);
     const faves = await getFavorites();
     setFavorites(faves);
     setLoading(false);
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadFavorites();
+    }, [loadFavorites])
+  );
 
   const handleDelete = (id, name) => {
     Alert.alert('Remove Location', `Delete "${name}" from saved locations?`, [
@@ -27,7 +28,7 @@ export default function SavedScreen({ navigation }) {
         text: 'Delete',
         onPress: async () => {
           await removeFavorite(id);
-          loadFavorites();
+          setFavorites(prev => prev.filter(fav => fav.id !== id));
         },
         style: 'destructive',
       },
