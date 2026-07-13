@@ -148,13 +148,28 @@ web-build/
 *.jks
 *.p8
 *.p12
-*.key
 *.mobileprovision
 *.orig.*
 
 # EAS / App Store build artifacts
 ios/
-android/
+
+# Android / Gradle / Android Studio
+android/local.properties
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/**/build/
+android/**/bin/
+android/**/.cxx/
+android/**/*.iml
+captures/
+
+# Kotlin/Ktor backend (server/) build artifacts
+server/.gradle/
+server/.kotlin/
+server/bin/
+server/build/
 
 # Python backend
 __pycache__/

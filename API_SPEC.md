@@ -68,6 +68,9 @@ Fetch a sunrise/sunset forecast for a given location and date.
   },
   "weather": {
     "cloud_cover_percent": 15,
+    "cloud_cover_low_percent": 0,
+    "cloud_cover_mid_percent": 5,
+    "cloud_cover_high_percent": 15,
     "visibility_km": 10,
     "conditions": "clear",
     "temperature_c": 18,
@@ -75,11 +78,23 @@ Fetch a sunrise/sunset forecast for a given location and date.
     "wind_speed_ms": 3.2
   },
   "forecast_quality": {
-    "score": "excellent",
+    "score": 0.94,
     "level": 1,
-    "cloud_rating": "excellent",
-    "atmospheric_rating": "excellent",
-    "reasoning": "Clear skies with excellent visibility. Minimal cloud cover expected."
+    "label": "Excellent",
+    "breakdown": {
+      "cloud_rating": 1.0,
+      "cloud_low_rating": 1.0,
+      "cloud_mid_rating": 0.85,
+      "cloud_high_rating": 0.9,
+      "visibility_rating": 1.0,
+      "condition_rating": 1.0,
+      "color_potential_rating": 1.0
+    },
+    "reasoning": "Clear skies with excellent visibility. Minimal cloud cover expected. Peak color window at sunrise/sunset.",
+    "color_timeline": [
+      { "time": "04:52", "altitude": "-18°", "quality": "Fair - deep purple/reds" },
+      { "time": "05:34", "altitude": "0°", "quality": "Excellent - peak orange/red" }
+    ]
   },
   "timestamp": "2024-05-09T15:32:00Z"
 }
@@ -90,7 +105,7 @@ Fetch a sunrise/sunset forecast for a given location and date.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | "success" or "error" |
-| `location.name` | string | Human-readable location name (reverse geocoded) |
+| `location.name` | string | Human-readable location name (falls back to `"Lat X, Lon Y"` — no reverse geocoding API is configured) |
 | `date` | string | ISO 8601 date (echo of request) |
 | `timezone` | string | IANA timezone for location (e.g., "America/Denver") |
 | `accuracy_warning` | boolean | true if date is >48 hours in future |
@@ -98,11 +113,17 @@ Fetch a sunrise/sunset forecast for a given location and date.
 | `sunrise/sunset.azimuth` | number | 0-360°, compass direction (0=N, 90=E, 180=S, 270=W) |
 | `sunrise/sunset.altitudes` | object | Sun altitude angles (0° = horizon) |
 | `sunrise/sunset.twilight_*` | string | Twilight event times (civil, nautical, astronomical) |
-| `weather.*` | object | Weather conditions at forecast time |
-| `forecast_quality.score` | string | "excellent" \| "good" \| "fair" \| "poor" |
-| `forecast_quality.level` | number | 1-4 (for UI sorting/filtering) |
-| `forecast_quality.*_rating` | string | Component breakdowns (see FORECAST_SCORING.md) |
+| `weather.cloud_cover_percent` | number | Blended cloud cover, 0-100% |
+| `weather.cloud_cover_low/mid/high_percent` | number | Cloud cover by altitude band, 0-100% each (from Open-Meteo) — this is what actually predicts sunset/sunrise color, not the blended value |
+| `weather.*` | object | Remaining weather conditions at forecast time |
+| `forecast_quality.score` | number | 0-1 |
+| `forecast_quality.level` | number | 1 (Excellent) – 4 (Poor) |
+| `forecast_quality.label` | string | "Excellent" \| "Good" \| "Fair" \| "Poor" |
+| `forecast_quality.breakdown.*` | number | Component sub-scores, 0-1 each, all "higher = better" (see FORECAST_SCORING.md) |
+| `forecast_quality.color_timeline` | array | Color quality at each twilight altitude band for the requested event(s) |
 | `timestamp` | string | API response generation time (ISO 8601) |
+
+**Weather sampling note:** weather is sampled once per request, at the nearest hourly forecast to sunset time for `type=sunset` and `type=both`, and to sunrise time for `type=sunrise`. A future version may return per-event weather for `type=both` rather than sharing one sample between sunrise and sunset.
 
 #### Error Responses
 
@@ -159,82 +180,40 @@ Fetch a sunrise/sunset forecast for a given location and date.
 
 ### Astronomy Calculations
 
-**Library Selection:**
-- **Python:** `pymeeus` (pure Python, no C dependencies)
-- **Node.js:** `astronomy-engine` (npm package)
+**Library:** [`commons-suncalc`](https://shredzone.org/maven/commons-suncalc/) (JVM/Kotlin, Apache 2.0). Timezone lookup is offline via [`timeshape`](https://github.com/RomanIakovlev/timeshape) (no external geocoding API call needed).
 
 **Accuracy Requirements:**
 - Sun times: ±1 minute
 - Angles: ±0.1°
 - Azimuth: ±1°
 
-**Implementation Pseudo-code:**
+**Implementation** (`server/src/main/kotlin/com/sunsetchasers/services/AstronomyService.kt`):
 
-```python
-from pymeeus.Epoch import Epoch
-from pymeeus.Sun import Sun
+```kotlin
+val zone = timeZoneEngine.query(lat, lon).orElse(ZoneId.of("UTC"))
+val referenceInstant = localDate.atTime(12, 0).atZone(zone)
 
-def calculate_sunrise_sunset(lat, lon, date):
-    # date is a datetime.date object
-    epoch = Epoch.from_gregorian_date(date.year, date.month, date.day)
-    
-    sun = Sun(epoch)
-    sunrise_epoch = sun.sunrise(Longitude(lon), Latitude(lat))
-    sunset_epoch = sun.sunset(Longitude(lon), Latitude(lat))
-    
-    sunrise_time = sunrise_epoch.jde().to_datetime()  # UTC
-    sunset_time = sunset_epoch.jde().to_datetime()    # UTC
-    
-    # Convert to local timezone
-    local_tz = get_timezone(lat, lon)
-    sunrise_local = sunrise_time.astimezone(local_tz)
-    sunset_local = sunset_time.astimezone(local_tz)
-    
-    # Calculate sun altitude angles at specific times
-    angles = {
-        "at_horizon": 0,
-        "at_neg6": calculate_altitude(epoch, lat, lon, -6),
-        "at_neg18": calculate_altitude(epoch, lat, lon, -18)
-    }
-    
-    # Calculate azimuths
-    sunrise_azimuth = calculate_azimuth(sunrise_epoch, lat, lon)
-    sunset_azimuth = calculate_azimuth(sunset_epoch, lat, lon)
-    
-    return {
-        "sunrise_time": sunrise_local,
-        "sunrise_azimuth": sunrise_azimuth,
-        "sunset_time": sunset_local,
-        "sunset_azimuth": sunset_azimuth,
-        "angles": angles
-    }
+val visual = SunTimes.compute().on(referenceInstant).at(lat, lon).execute()
+val civil = SunTimes.compute().on(referenceInstant).at(lat, lon).twilight(SunTimes.Twilight.CIVIL).execute()
+val nautical = SunTimes.compute().on(referenceInstant).at(lat, lon).twilight(SunTimes.Twilight.NAUTICAL).execute()
+val astronomical = SunTimes.compute().on(referenceInstant).at(lat, lon).twilight(SunTimes.Twilight.ASTRONOMICAL).execute()
+
+val riseAzimuth = SunPosition.compute().on(visual.rise).at(lat, lon).execute().azimuth
 ```
 
 ### Weather Data Integration
 
-**API Choice Considerations:**
-- **OpenWeatherMap**: Free tier, 60 calls/min, decent cloud data
-- **WeatherAPI.com**: Free tier, 1M calls/month, good cloud cover
-- **NOAA (US only)**: Free, no rate limit, very accurate for US
+**Provider:** [Open-Meteo](https://open-meteo.com) — free, no API key or account required (10,000 requests/day, 600/min for non-commercial use). Chosen specifically because it exposes cloud cover **by altitude** (`cloud_cover_low` / `_mid` / `_high`), which OpenWeatherMap, WeatherAPI.com, and NOAA/NWS do not — and altitude is what actually predicts sunrise/sunset color quality (see FORECAST_SCORING.md).
 
-**Caching Strategy:**
-- Cache weather results for 30 minutes per (lat, lon, date) tuple
-- Use in-memory cache or Redis depending on deployment
-- Invalidate cache when new forecast data is published (usually 6-hour intervals)
+**Request:** `GET https://api.open-meteo.com/v1/forecast` with `hourly=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility,temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code`, `wind_speed_unit=ms`, `timezone=UTC`, `past_days=1`, `forecast_days=9` (the padding avoids missing the target local-date hour at extreme UTC offsets). Weather codes (WMO) are mapped to condition strings in `WeatherService.weatherCodeToCondition()`.
 
-**Rate Limiting:**
-- Implement backoff if weather API rate limits hit
-- Return cached result (even if stale) rather than failing
-- Log warning if falling back to cache >1 hour old
+**Caching Strategy** (`server/.../services/WeatherService.kt`):
+- The raw hourly arrays are cached per `(lat, lon, dateStr)` for 30 minutes — not a single picked sample, so a sunrise request and a sunset request for the same location/date share one upstream fetch.
+- The nearest-hour index is picked fresh on every call, using the actual computed sunrise/sunset instant from `AstronomyService` (not a fixed "solar noon" guess).
 
 ### Forecast Scoring Algorithm
 
-See **FORECAST_SCORING.md** for detailed algorithm.
-
-**Quick Summary:**
-- Cloud cover: 0-50% = excellent, 50-70% = good, 70-85% = fair, >85% = poor
-- Visibility: >9km = excellent, >6km = good, >3km = fair, <3km = poor
-- Combination: Weighted average → final score
+See **FORECAST_SCORING.md** for the full algorithm, including the cloud-geometry (altitude-aware) formula.
 
 ### Reverse Geocoding
 
@@ -309,17 +288,18 @@ Same request, but date is "2024-06-25" (16 days ahead):
 }
 ```
 
-Request for "2024-05-18" (9 days ahead, still within 7 days but would have warning):
+Request for "2024-05-18" (more than 48 hours ahead, still within the 7-day window):
 ```json
 {
+  "accuracy_warning": true,
   "forecast_quality": {
-    "score": "good",
+    "score": 0.72,
     "level": 2,
-    "accuracy_warning": true,
-    "warning_message": "Forecasts beyond 48 hours have reduced accuracy. Weather conditions may change."
+    "label": "Good"
   }
 }
 ```
+The client is expected to show a disclaimer when `accuracy_warning` is `true` — see "Notes for Development" in README.md.
 
 ---
 
@@ -334,6 +314,5 @@ Request for "2024-05-18" (9 days ahead, still within 7 days but would have warni
 
 - Input validation on all parameters (type checking, range validation)
 - Rate limiting to prevent abuse
-- CORS headers configured to allow frontend domain(s)
-- No sensitive data in error messages (no API key leaks, etc.)
-- Use HTTPS in production
+- No API keys to leak — Open-Meteo requires none, and no other third-party keys are used server-side
+- Use HTTPS in production (the native Android client talks to this API directly; no CORS applies since there's no browser involved)

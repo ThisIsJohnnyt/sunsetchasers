@@ -1,137 +1,73 @@
 # Getting Started Guide
 
-Quick reference for beginning V1.0 development of the Sunrise/Sunset Photographer Forecast App.
+Setup instructions for running the Sunrise/Sunset Photographer Forecast App locally: a Kotlin/Ktor backend and a Kotlin/Jetpack Compose Android app.
 
 ## What You're Building
 
-A smartphone app (React Native/Expo) that helps photographers plan sunrise and sunset shots by showing:
+A native Android app that helps photographers plan sunrise and sunset shots by showing:
 - **Precise sun position** (azimuth, altitude angles) on a map
-- **7-day weather forecast** with cloud cover and visibility
+- **7-day weather forecast** with cloud cover (including by altitude) and visibility
 - **Quality score** (Excellent/Good/Fair/Poor) based on combined data
 - **Saved favorite locations** for quick access
 
-**No user accounts for V1** — all data stored locally on the phone.
+**No user accounts** — all data (favorites, settings) stored locally on the device. **No API keys required anywhere** — both the weather provider (Open-Meteo) and the map tiles (osmdroid/OpenStreetMap) are free and keyless.
 
 ---
 
-## Key Decisions You Need to Make
+## Prerequisites
 
-Before starting Phase 1, decide:
+- **JDK 17** (for both the backend and Android builds)
+- **Android Studio** (latest stable) with the Android SDK — needed to run the Android app on an emulator or device
+  - minSdk 26 (Android 8.0), so any emulator image API 26+ works
+- Git
 
-### 1. Backend Language
-
-**Option A: Node.js (Recommended for speed)**
-- Faster setup (same language as frontend)
-- `astronomy-engine` npm package is well-maintained
-- Easy deployment (Vercel, Railway)
-- Con: Less familiar if your background is Python
-
-**Option B: Python**
-- Familiar language for you
-- `pymeeus` library is excellent for astronomy
-- Easy deployment (Flask + Heroku/Railway)
-- Con: Separate language stack from frontend
-
-**Recommendation:** Start with **Node.js** for fastest MVP, switch to Python later if preferred.
-
-### 2. Weather API
-
-**Option A: OpenWeatherMap (Recommended)**
-- Free tier: 60 calls/min, 1000/day
-- Includes: cloud %, visibility, conditions, temperature
-- Well-documented, reliable
-- Cost: $0 for V1 usage
-
-**Option B: WeatherAPI.com**
-- Free tier: 1M calls/month
-- Slightly better UI/docs
-- Same data quality as OpenWeatherMap
-
-**Option C: NOAA (US Only)**
-- Free, no rate limits
-- Most accurate for USA
-- Limited international coverage
-
-**Recommendation:** Start with **OpenWeatherMap** (most flexible, good free tier).
-
-### 3. Map Library
-
-**React Native Maps:**
-- `@react-native-maps/maps` — pre-selected
-- Supports both iOS and Android
-- Can render custom overlays (azimuth lines, compass)
-- Good documentation
-
-**No alternatives needed** — this is the standard choice.
+That's it — no Node.js, no Python, no npm, no API key sign-ups.
 
 ---
 
-## Pre-Development Checklist
+## Documentation Review
 
-Before coding:
-
-- [ ] **Accounts/Keys Created:**
-  - OpenWeatherMap API key (free account)
-  - EAS account (already have, confirmed)
-  - GitHub account (for version control, optional but recommended)
-
-- [ ] **Development Environment:**
-  - Node.js 16+ installed (`node --version`)
-  - Expo CLI installed (`npm install -g expo-cli`)
-  - EAS CLI installed (`npm install -g eas-cli`)
-  - Code editor (VS Code recommended)
-
-- [ ] **Testing Devices Ready:**
-  - Android: Emulator set up OR device for sideloading
-  - iOS: Expo Go installed on friend's iPhone (for Phase 2+)
-
-- [ ] **Documentation Review:**
-  - Read ARCHITECTURE.md (understand data flow)
-  - Read API_SPEC.md (understand what backend needs to do)
-  - Read FORECAST_SCORING.md (understand scoring logic)
+Before diving in, it helps to read:
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — system design and data flow
+- **[API_SPEC.md](API_SPEC.md)** — what the backend returns and why
+- **[FORECAST_SCORING.md](FORECAST_SCORING.md)** — the quality-scoring algorithm, including the cloud-geometry formula
 
 ---
 
-## Development Process
-
-### Code Organization
+## Code Organization
 
 ```
-sunrise-forecast-app/
-├── backend/                    # Node.js API
-│   ├── src/
-│   │   ├── routes/forecast.js # Main /api/forecast endpoint
+Sunset Chasers/
+├── server/                              # Kotlin/Ktor backend
+│   ├── src/main/kotlin/com/sunsetchasers/
+│   │   ├── routes/ForecastRoutes.kt     # POST /api/forecast
 │   │   ├── services/
-│   │   │   ├── astronomy.js   # Sun calculations
-│   │   │   ├── weather.js     # Weather API calls
-│   │   │   └── scoring.js     # Quality scoring
-│   │   └── index.js           # Express app entry
-│   ├── tests/                 # Unit tests
-│   ├── package.json
-│   └── .env                   # API keys (never commit!)
+│   │   │   ├── AstronomyService.kt      # commons-suncalc + timeshape
+│   │   │   ├── WeatherService.kt        # Open-Meteo client + cache
+│   │   │   └── ScoringService.kt        # Cloud geometry + quality scoring
+│   │   ├── models/ForecastModels.kt     # Request/response DTOs
+│   │   └── Application.kt               # Ktor server entry point
+│   ├── src/test/kotlin/...              # JUnit 5 + MockK tests
+│   ├── build.gradle.kts
+│   └── .env.example
 │
-├── frontend/                   # React Native (Expo)
-│   ├── app/
-│   │   ├── screens/
-│   │   │   ├── HomeScreen.js
-│   │   │   ├── ForecastScreen.js
-│   │   │   ├── SavedLocationsScreen.js
-│   │   │   └── SettingsScreen.js
-│   │   ├── components/
-│   │   │   ├── LocationSearch.js
-│   │   │   ├── DatePicker.js
-│   │   │   ├── MapView.js
-│   │   │   ├── ForecastDetails.js
-│   │   │   └── QualityScore.js
-│   │   ├── utils/
-│   │   │   ├── api.js         # Backend calls
-│   │   │   ├── storage.js     # AsyncStorage helpers
-│   │   │   └── formatting.js  # Time/units formatting
-│   │   └── App.js             # Entry point
-│   ├── app.json               # Expo config
-│   └── package.json
+├── android/                             # Kotlin/Compose multi-module app
+│   ├── app/                             # Application, MainActivity, NavHost
+│   ├── core/
+│   │   ├── model/                       # Shared domain types
+│   │   ├── network/                     # Ktor client, DTOs, mapper
+│   │   ├── database/                    # Room (favorites)
+│   │   ├── datastore/                   # Jetpack DataStore (settings)
+│   │   └── designsystem/                # Material 3 theme
+│   ├── feature/
+│   │   ├── forecast/                    # Main forecast screen + map
+│   │   ├── favorites/                   # Favorites management screen
+│   │   └── settings/                    # Units/theme screen
+│   └── build.gradle.kts
 │
-└── docs/                       # All markdown files
+├── backend/                             # Legacy Node.js prototype — reference only, not used
+│
+└── docs (this directory)
     ├── README.md
     ├── ARCHITECTURE.md
     ├── API_SPEC.md
@@ -140,270 +76,109 @@ sunrise-forecast-app/
     └── GETTING_STARTED.md (this file)
 ```
 
-### Git Workflow (Recommended)
+---
+
+## Running the Backend
 
 ```bash
-# Initial setup
-git init
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/sunrise-forecast.git
-
-# Per feature/sprint
-git checkout -b feature/backend-astronomy
-# ... make changes ...
-git add .
-git commit -m "Implement astronomy calculations with ±1 min accuracy"
-git push origin feature/backend-astronomy
-# Open PR, review, merge
-
-# Always keep main deployable
+cd server
+./gradlew run          # starts on http://localhost:8080
 ```
 
-### Testing Strategy
+No `.env` setup is required — `server/.env.example` documents that `PORT` is the only optional variable. Open-Meteo needs no API key.
+
+**Run the tests:**
+```bash
+cd server
+./gradlew test
+```
+
+**Try it manually:**
+```bash
+curl -X POST http://localhost:8080/api/forecast \
+  -H "Content-Type: application/json" \
+  -d '{"latitude": 37.0, "longitude": -110.0, "date": "2026-07-15", "type": "both"}'
+```
+
+See [API_SPEC.md](API_SPEC.md) for the full response shape.
+
+---
+
+## Running the Android App
+
+1. Open the `android/` directory as a project in Android Studio, or build from the command line:
+   ```bash
+   cd android
+   ./gradlew assembleDebug
+   ```
+2. Start an emulator (API 26+) via Android Studio's Device Manager, or connect a physical device with USB debugging enabled.
+3. Run the app (Android Studio's Run button, or `./gradlew installDebug`).
+
+**Backend URL:** the app expects the backend reachable at the emulator's host-loopback address (`10.0.2.2:8080` for the standard Android emulator talking to a backend running on your machine) — check `android/core/network`'s base URL configuration if you're pointing at a different host.
+
+---
+
+## Testing Strategy
 
 **Backend:**
-- Unit tests for each service (astronomy, weather, scoring)
-- Integration tests for /api/forecast endpoint
-- Manual testing with curl/Postman before frontend integration
+- Unit tests per service (`AstronomyServiceTest`, `WeatherServiceTest`, `ScoringServiceTest`)
+- Route-level tests using Ktor's test host (`ForecastRouteTest`)
+- Manual testing with curl before wiring up the Android app
 
-**Frontend:**
-- Manual testing on device (start simple, iterate)
-- Test with friends' iPhones early (Phase 2+)
-- Automated testing optional for V1 (React Native Testing Library if motivated)
-
----
-
-## Phase 1 Quickstart: Backend Setup
-
-### Step 1: Initialize Backend Project
-
-```bash
-# Create project directory
-mkdir sunrise-forecast-app
-cd sunrise-forecast-app
-
-# Initialize backend (Node.js)
-mkdir backend
-cd backend
-npm init -y
-npm install express axios dotenv
-
-# For astronomy
-npm install astronomy-engine
-
-# For testing
-npm install --save-dev jest
-
-# Create folder structure
-mkdir src tests
-mkdir src/routes src/services
-```
-
-### Step 2: Create .env File
-
-```bash
-# backend/.env
-WEATHER_API_KEY=your_openweathermap_key_here
-PORT=3000
-NODE_ENV=development
-```
-
-### Step 3: Start with Astronomy Service
-
-Create `src/services/astronomy.js`:
-
-```javascript
-// Import astronomy-engine or implement using pymeeus
-// See ARCHITECTURE.md and API_SPEC.md for implementation details
-
-// Function: calculateSunrise(latitude, longitude, date)
-// Returns: { time, azimuth, altitudes }
-
-// Function: calculateSunset(latitude, longitude, date)
-// Returns: { time, azimuth, altitudes }
-
-// Test with known values (e.g., Stonehenge solstice)
-```
-
-### Step 4: Implement Weather Service
-
-Create `src/services/weather.js`:
-
-```javascript
-// Calls OpenWeatherMap API
-// Caches results for 30 minutes
-// Extracts: cloud_cover%, visibility_km, conditions
-
-// Function: fetchWeatherForecast(latitude, longitude)
-// Returns: 7-day forecast array
-```
-
-### Step 5: Implement Scoring Service
-
-Create `src/services/scoring.js`:
-
-```javascript
-// Implements algorithm from FORECAST_SCORING.md
-// Combines astronomy + weather into quality score
-
-// Function: calculateForecastQuality(astronomyData, weatherData)
-// Returns: { score, level, reasoning }
-```
-
-### Step 6: Create API Endpoint
-
-Create `src/routes/forecast.js`:
-
-```javascript
-// POST /api/forecast
-// Input validation
-// Calls astronomy + weather + scoring services
-// Returns JSON response (see API_SPEC.md)
-```
-
-### Step 7: Test & Deploy
-
-```bash
-# Local testing
-npm test
-
-# Start server locally
-npm start
-# Accessible at http://localhost:3000
-
-# Deploy (Vercel or Railway)
-# Follow their Node.js deployment guide
-```
-
----
-
-## Frontend Phase 2 Quickstart
-
-```bash
-# From project root
-cd ..
-
-# Initialize Expo
-npx create-expo-app frontend
-cd frontend
-npm install axios @react-native-maps/maps react-navigation @react-native-bottom-tabs
-
-# Start development
-npx expo start
-
-# Scan QR code with Expo Go on iPhone (friend) or Android phone
-```
-
-**Key first goal:** Get home screen working with location search that calls your backend.
-
----
-
-## Daily Development Workflow
-
-**Each session:**
-
-1. Pick a task from DEVELOPMENT_ROADMAP.md
-2. Create a git branch: `git checkout -b feature/task-name`
-3. Code and test (run on real device frequently)
-4. Commit: `git commit -m "Clear message about what you did"`
-5. Push and create PR (or just push to main if solo)
-
-**Progress tracking:**
-
-- Use the checkbox lists in DEVELOPMENT_ROADMAP.md
-- Update as you complete tasks
-- Screenshot progress (nice for motivation)
+**Android:**
+- Compile and run on an emulator or device against a live backend for any UI-affecting change — type checks and unit tests verify correctness of logic, not that a screen actually renders and behaves as expected
+- Test both metric and imperial unit settings, light and dark theme
 
 ---
 
 ## Common Gotchas & Solutions
 
-### Astronomy Library Accuracy
-- **Problem:** Sun times off by >1 minute
-- **Solution:** Verify with known data (NASA, timeanddate.com)
-- **Check:** Test at multiple latitudes/longitudes, especially polar regions
+### Android emulator can't reach the backend
+- **Problem:** requests time out or fail to connect
+- **Solution:** the emulator's `localhost` is not your machine's `localhost` — use `10.0.2.2` from the emulator to reach a backend running on your host machine
 
-### Weather API Rate Limiting
-- **Problem:** Too many requests, hitting rate limit
-- **Solution:** Implement 30-min cache, user can't search same location twice in quick succession
-- **Fallback:** Return cached result if fresh API call fails
+### AGP / Kotlin plugin conflicts
+- **Problem:** `Cannot add extension with name 'kotlin'` during a Gradle sync
+- **Solution:** AGP 9.x auto-applies Kotlin Android support for Android modules — don't also explicitly apply `org.jetbrains.kotlin.android` in those modules' `build.gradle.kts` (the pure-JVM `:core:model` module is the one exception, using `kotlin.jvm` instead)
 
-### iOS Testing Friction
-- **Problem:** No Mac, hard to test iPhone version
-- **Solution:** Use Expo Go (runs app inside Expo's container) on friend's iPhone
-- **For beta:** Use EAS internal distribution → TestFlight
+### Dependency version lookups
+- **Problem:** `search.maven.org`'s search index can lag behind what's actually published
+- **Solution:** check `maven-metadata.xml` directly — `https://repo1.maven.org/maven2/<group-path>/<artifact>/maven-metadata.xml` (or `dl.google.com/dl/android/maven2/...` for AndroidX/Google artifacts) — for the authoritative latest version
 
-### Map Overlay Performance
-- **Problem:** Drawing many azimuth lines causes lag
-- **Solution:** Use native map polylines, not custom Canvas overlays
-- **Optimize:** Test with multiple locations, profile with React DevTools
+### Timezone bugs
+- **Problem:** times showing in the wrong timezone
+- **Solution:** the backend looks up IANA timezone offline via `timeshape` from the request's lat/lon and returns all times already localized — no client-side timezone math should be needed
 
-### Timezone Bugs
-- **Problem:** Times showing in wrong timezone
-- **Solution:** Always work with UTC internally, convert to local only for display
-- **Test:** Check forecast for locations across multiple time zones
-
-### AsyncStorage Data Loss
-- **Problem:** Saved locations disappear after app close
-- **Solution:** Ensure AsyncStorage is properly initialized, handle async/await correctly
-- **Debug:** Log data to console, verify it persists
+### Weather sampled at the wrong time
+- Note that `type=both` currently samples weather once, at the sunset instant (see the "Weather sampling note" in [API_SPEC.md](API_SPEC.md)) — this is a known simplification, not a bug, tracked in [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md).
 
 ---
 
-## Resources & Documentation
+## Daily Development Workflow
 
-**Astronomy:**
-- [PyMeeus Documentation](https://github.com/monadius/pymeeus) (Python)
-- [Astronomy Engine](https://github.com/cosinekitty/astronomy) (JavaScript/Python)
-- [Timeanddate.com](https://timeanddate.com) (verify calculations)
-
-**React Native:**
-- [React Native Docs](https://reactnative.dev)
-- [Expo Docs](https://docs.expo.dev)
-- [React Navigation](https://reactnavigation.org)
-
-**Weather APIs:**
-- [OpenWeatherMap API](https://openweathermap.org/api)
-- [WeatherAPI](https://www.weatherapi.com)
-- [NOAA Weather Data](https://www.weather.gov/documentation/services-web-api)
-
-**Deployment:**
-- [Vercel Docs](https://vercel.com/docs) (Node.js)
-- [Railway Docs](https://docs.railway.app)
-- [Heroku Docs](https://devcenter.heroku.com) (legacy but still works)
-
-**App Store Submission:**
-- [Apple App Store Guidelines](https://developer.apple.com/app-store/guidelines/)
-- [Google Play Console Help](https://support.google.com/googleplay/android-developer)
+1. Pick a task from [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)
+2. Create a branch: `git checkout -b feature/task-name`
+3. Make changes; run `./gradlew test` (backend) and/or `./gradlew assembleDebug` + manual verification on an emulator (Android)
+4. Commit with a clear message
+5. Push and open a PR (or push to main if solo)
 
 ---
 
-## Success Metrics for V1.0
+## Resources
 
-✓ Users can search any location on Earth  
-✓ Forecasts show sun angles to ±1 minute and ±1° accuracy  
-✓ Quality scores match actual conditions (photographer feedback)  
-✓ App doesn't crash, runs smoothly on phones 5+ years old  
-✓ Available on both iOS App Store and Google Play Store  
+**Astronomy:** [commons-suncalc](https://shredzone.org/maven/commons-suncalc/), [timeshape](https://github.com/RomanIakovlev/timeshape)
+
+**Weather:** [Open-Meteo API docs](https://open-meteo.com/en/docs)
+
+**Android:** [Jetpack Compose docs](https://developer.android.com/jetpack/compose), [Ktor client docs](https://ktor.io/docs/client-create-new-application.html), [osmdroid](https://github.com/osmdroid/osmdroid), [Room](https://developer.android.com/training/data-storage/room), [Jetpack DataStore](https://developer.android.com/topic/libraries/architecture/datastore), [Hilt](https://dagger.dev/hilt/)
+
+**Deployment:** [Google Play Console Help](https://support.google.com/googleplay/android-developer)
 
 ---
 
 ## Questions Before Starting?
 
-**Unclear on architecture?** → Re-read ARCHITECTURE.md with focus on data flow diagram  
-**Unclear on API?** → Check API_SPEC.md example requests/responses  
-**Unclear on scoring?** → Work through FORECAST_SCORING.md test cases  
-**Unclear on timeline?** → Start Phase 1, adjust as needed  
-
-**Ready?** Start Phase 1, Sprint 1.1: Backend project initialization!
-
----
-
-## Support & Iteration
-
-This document and the roadmap are **living documents** — update them as you learn:
-- If a task takes 2x longer than estimated, note it
-- If a library doesn't work, document the switch
-- If you discover a simpler approach, update the roadmap
-
-Good luck! 🌅
+**Unclear on architecture?** → Re-read [ARCHITECTURE.md](ARCHITECTURE.md), focused on the data flow diagram.
+**Unclear on the API?** → Check [API_SPEC.md](API_SPEC.md)'s example requests/responses.
+**Unclear on scoring?** → Work through [FORECAST_SCORING.md](FORECAST_SCORING.md)'s worked examples.
+**Unclear on what's left?** → Check [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md).

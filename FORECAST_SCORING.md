@@ -12,53 +12,81 @@ The forecast quality score combines weather conditions with astronomical data to
 
 ## Scoring Inputs
 
-### 1. Cloud Cover Rating
+### 1. Cloud Cover Rating (altitude-aware "cloud geometry")
 
-Cloud cover data comes from weather API (0-100%).
+Cloud cover data comes from Open-Meteo **by altitude band** — `cloud_cover_low`,
+`cloud_cover_mid`, `cloud_cover_high` (each 0-100%) — not a single blended
+percentage. Altitude matters enormously for color:
 
-**Optimal cloud cover:** 10-40%
-- Wispy, high clouds catch sun color beautifully
-- Too clear: no clouds to reflect color
-- Too cloudy: light gets blocked
+- **High cloud** (cirrus-type, ~20,000 ft+): thin and high enough to catch
+  and scatter sunset/sunrise light into vivid color. Sweet spot ~20-70%.
+- **Mid cloud** (~6,500-20,000 ft): similar effect, smaller sweet spot
+  (~10-50%).
+- **Low cloud** (below ~6,500 ft): sits right at the horizon and can block
+  the narrow gap the colored light travels through — the "horizon block"
+  effect. This isn't a sweet spot, it's a **penalty that gates the whole
+  result**: even a gorgeous high/mid-cloud mix is worthless if a low cloud
+  bank sits on the horizon.
 
-**Rating Scale:**
+**Band scoring:**
 
-| Cloud Cover % | Rating | Score |
-|---------------|--------|-------|
-| 0-5% | Good (clear) | 0.65 |
-| 5-15% | Excellent | 0.95 |
-| 15-40% | Excellent | 1.0 |
-| 40-50% | Good | 0.85 |
-| 50-70% | Good | 0.70 |
-| 70-85% | Fair | 0.40 |
-| 85-100% | Poor | 0.10 |
+| High cloud % | Score | | Mid cloud % | Score | | Low cloud % | Gate |
+|---|---|---|---|---|---|---|---|
+| 0% | 0.65 | | 0% | 0.5 | | 0-10% | 1.0 |
+| 1-19% | 0.9 | | 1-9% | 0.85 | | 10-25% | 0.9 |
+| 20-70% | 1.0 | | 10-50% | 1.0 | | 25-40% | 0.75 |
+| 71-85% | 0.6 | | 51-75% | 0.55 | | 40-60% | 0.4 |
+| 86-100% | 0.3 | | 76-100% | 0.25 | | 60-80% | 0.15 |
+| | | | | | | 80-100% | 0.05 |
 
-**Implementation:**
+**Combining the bands:** either the high or mid band alone hitting its sweet
+spot can produce a great sky, so the color contribution is the **best** of
+the two (not an average) — then the low-cloud gate multiplies it down.
 
-```python
-def cloud_rating(cloud_cover_percent):
-    """
-    Returns cloud rating score (0-1).
-    Optimal range is 15-40% (wispy clouds).
-    """
-    if cloud_cover_percent < 0 or cloud_cover_percent > 100:
-        return 0  # Invalid data
-    
-    if cloud_cover_percent <= 5:
-        return 0.65
-    elif cloud_cover_percent <= 15:
-        return 0.95
-    elif cloud_cover_percent <= 40:
-        return 1.0
-    elif cloud_cover_percent <= 50:
-        return 0.85
-    elif cloud_cover_percent <= 70:
-        return 0.70
-    elif cloud_cover_percent <= 85:
-        return 0.40
-    else:  # > 85%
-        return 0.10
 ```
+color_contribution = max(high_band_score, mid_band_score)
+cloud_geometry_rating = color_contribution × low_cloud_gate
+```
+
+**Implementation** (`server/src/main/kotlin/com/sunsetchasers/services/ScoringService.kt`):
+
+```kotlin
+fun highCloudBandScore(highPercent: Double): Double = when {
+    highPercent <= 0 -> 0.65
+    highPercent < 20 -> 0.9
+    highPercent <= 70 -> 1.0
+    highPercent <= 85 -> 0.6
+    else -> 0.3
+}
+
+fun midCloudBandScore(midPercent: Double): Double = when {
+    midPercent <= 0 -> 0.5
+    midPercent < 10 -> 0.85
+    midPercent <= 50 -> 1.0
+    midPercent <= 75 -> 0.55
+    else -> 0.25
+}
+
+fun lowCloudGate(lowPercent: Double): Double = when {
+    lowPercent <= 10 -> 1.0
+    lowPercent <= 25 -> 0.9
+    lowPercent <= 40 -> 0.75
+    lowPercent <= 60 -> 0.4
+    lowPercent <= 80 -> 0.15
+    else -> 0.05
+}
+
+fun cloudGeometryRating(lowPercent: Double, midPercent: Double, highPercent: Double): Double {
+    if (lowPercent !in 0.0..100.0 || midPercent !in 0.0..100.0 || highPercent !in 0.0..100.0) return 0.1
+    val colorContribution = maxOf(highCloudBandScore(highPercent), midCloudBandScore(midPercent))
+    return (colorContribution * lowCloudGate(lowPercent)).coerceIn(0.0, 1.0)
+}
+```
+
+**Worked examples:**
+- Totally clear (0/0/0) → `max(0.65, 0.5) × 1.0 = 0.65` — matches the old flat "clear sky" value, so this is a strict upgrade, not a discontinuity.
+- Sweet-spot high+mid, no low cloud (low=5, mid=30, high=50) → `max(1.0, 1.0) × 1.0 = 1.0`.
+- The same sweet-spot high+mid mix, but with heavy low cloud (low=70, mid=30, high=50) → `max(1.0, 1.0) × 0.15 = 0.15` — the horizon-block gate suppresses an otherwise-great sky.
 
 ### 2. Visibility Rating
 
@@ -208,14 +236,14 @@ def color_potential_rating(sun_altitude_degrees):
 
 ```
 Overall Score = 
-  (0.35 × Cloud Rating) +
+  (0.35 × Cloud Geometry Rating) +
   (0.20 × Visibility Rating) +
   (0.15 × Condition Rating) +
   (0.30 × Color Potential Rating at 0° altitude)
 ```
 
 **Rationale:**
-- Cloud cover: Largest factor (35%) — determines if light reaches observer
+- Cloud geometry: Largest factor (35%) — determines if light reaches observer, now altitude-aware (see above) rather than a single blended percentage
 - Color potential (30%): When sun angle aligns with good weather, colors are spectacular
 - Visibility (20%): Atmospheric clarity affects color saturation
 - Conditions (15%): Supplementary factor, many conditions fold into visibility
@@ -223,12 +251,12 @@ Overall Score =
 **Example Calculation:**
 
 ```python
-def overall_score(cloud_rating, visibility_rating, condition_rating, color_potential):
+def overall_score(cloud_geometry_rating, visibility_rating, condition_rating, color_potential):
     """
     Returns combined forecast quality score (0-1).
     """
     score = (
-        0.35 * cloud_rating +
+        0.35 * cloud_geometry_rating +
         0.20 * visibility_rating +
         0.15 * condition_rating +
         0.30 * color_potential
@@ -236,15 +264,15 @@ def overall_score(cloud_rating, visibility_rating, condition_rating, color_poten
     return min(max(score, 0), 1)  # Clamp to 0-1 range
 
 # Example:
-cloud = 0.95        # 20% cloud cover
-visibility = 0.90   # 8km visibility
-condition = 1.0     # Clear
-color = 1.0         # Sun at 0° altitude (peak color)
+cloud_geometry = 1.0   # low=5%, mid=30%, high=50% — sweet spot, clear horizon
+visibility = 0.90      # 8km visibility
+condition = 1.0        # Clear
+color = 1.0            # Sun at 0° altitude (peak color)
 
-overall = overall_score(cloud, visibility, condition, color)
-# = (0.35*0.95) + (0.20*0.90) + (0.15*1.0) + (0.30*1.0)
-# = 0.333 + 0.18 + 0.15 + 0.30
-# = 0.963 → "Excellent"
+overall = overall_score(cloud_geometry, visibility, condition, color)
+# = (0.35*1.0) + (0.20*0.90) + (0.15*1.0) + (0.30*1.0)
+# = 0.35 + 0.18 + 0.15 + 0.30
+# = 0.98 → "Excellent"
 ```
 
 ---
@@ -300,6 +328,9 @@ The `/api/forecast` endpoint includes:
     "label": "Excellent",
     "breakdown": {
       "cloud_rating": 0.95,
+      "cloud_low_rating": 1.0,
+      "cloud_mid_rating": 1.0,
+      "cloud_high_rating": 0.9,
       "visibility_rating": 0.90,
       "condition_rating": 1.0,
       "color_potential_rating": 1.0
@@ -364,9 +395,10 @@ The `/api/forecast` endpoint includes:
 
 ## Future Enhancements (V2+)
 
+- ~~Cloud altitude from satellite data (high clouds > low clouds)~~ — **done**: Open-Meteo's per-altitude cloud cover now drives the Cloud Geometry Rating above.
 - Incorporate wind (affects cloud movement, dust, etc.)
 - Humidity levels (affects haze, atmospheric scattering)
 - Pressure systems (high pressure = clearer skies)
-- Cloud altitude from satellite data (high clouds > low clouds)
+- Per-event weather sampling (currently `type=both` shares one weather sample taken at sunset time — see API_SPEC.md)
 - Historical "golden" dates (patterns over years)
 - User feedback loop (photographers rate actual results vs. forecast)

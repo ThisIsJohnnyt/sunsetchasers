@@ -2,250 +2,168 @@
 
 ## System Overview
 
-The app consists of two primary components: a stateless backend API and a React Native frontend. The frontend is responsible for UI, local storage, and user interaction; the backend handles all ephemeris calculations and weather data aggregation.
+The app consists of two components: a stateless Kotlin/Ktor backend API, and a native Android app built with Kotlin/Jetpack Compose in a multi-module structure. The Android app handles UI, local storage (favorites, settings), and user interaction; the backend handles all ephemeris calculations and weather data aggregation. No third-party API keys are required anywhere in the stack.
 
 ```
-┌─────────────────────────────────────────────────┐
-│           React Native Frontend (Expo)          │
-│  ┌────────────────┐  ┌──────────────────────┐  │
-│  │  UI Screens    │  │  Local Storage       │  │
-│  │  - Home        │  │  - Favorite Locs     │  │
-│  │  - Forecast    │  │  - Settings          │  │
-│  │  - Saved Locs  │  │  (AsyncStorage)      │  │
-│  │  - Settings    │  │                      │  │
-│  └────────────────┘  └──────────────────────┘  │
-│           ↓                                      │
-│       API Client (utils/api.js)                 │
-│           ↓                                      │
-└─────────────────────────────────────────────────┘
-           ↓ HTTP (REST)
-           ↓ {lat, lon, date}
-┌─────────────────────────────────────────────────┐
-│         Backend API (Node.js / Python)          │
-│  ┌────────────────────────────────────────────┐ │
-│  │  POST /api/forecast                        │ │
-│  │  Input: {latitude, longitude, date}        │ │
-│  └────────────────────────────────────────────┘ │
-│    ↓                    ↓                        │
-│  ┌──────────────┐  ┌──────────────────────┐   │
-│  │ Astronomy    │  │ Weather Service      │   │
-│  │ Service      │  │ (OpenWeatherMap API) │   │
-│  │ - pymeeus    │  │ - Cloud cover        │   │
-│  │ - Sun angles │  │ - Visibility         │   │
-│  │ - Azimuth    │  │ - Conditions         │   │
-│  └──────────────┘  └──────────────────────┘   │
-│    ↓                    ↓                        │
-│  ┌──────────────────────────────────────────┐  │
-│  │  Forecast Scoring Service                │  │
-│  │  Combines astronomy + weather → Quality  │  │
-│  └──────────────────────────────────────────┘  │
-│           ↓                                      │
-└─────────────────────────────────────────────────┘
-           ↓ HTTP Response (JSON)
-           ↓ Forecast data + quality score
-┌─────────────────────────────────────────────────┐
-│      Frontend: Display & Local Storage          │
-│  - Render map, forecast details, quality       │
-│  - Cache result (optional)                      │
-│  - Allow user to save location to favorites    │
-└─────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                  Android App (Kotlin/Compose)              │
+│                                                              │
+│  :app — Hilt Application, MainActivity, NavHost             │
+│    │                                                         │
+│  ┌─┴──────────────┬──────────────────┬───────────────────┐ │
+│  │ :feature:       │ :feature:        │ :feature:         │ │
+│  │ forecast        │ favorites        │ settings          │ │
+│  │ (form, map,     │ (list + delete,  │ (units/theme      │ │
+│  │  result cards)  │  quick-picker)   │  pickers)         │ │
+│  └─┬──────────────┴──────────────────┴───────────────────┘ │
+│    │                                                         │
+│  ┌─┴────────────┬───────────────┬────────────────┬────────┐│
+│  │ :core:network │ :core:database│ :core:datastore│:core:  ││
+│  │ (Ktor client, │ (Room —       │ (Jetpack       │design- ││
+│  │  DTOs, mapper)│  favorites)   │  DataStore —   │system  ││
+│  │               │               │  settings)     │(Material││
+│  │               │               │                │ 3 theme)││
+│  └──────┬────────┴───────────────┴────────────────┴────────┘│
+│         │                    :core:model (shared domain types)│
+└─────────┼───────────────────────────────────────────────────┘
+          ↓ HTTP POST (Ktor client, no API key)
+          ↓ {latitude, longitude, date, type}
+┌─────────┼───────────────────────────────────────────────────┐
+│         ↓        Backend API (Kotlin / Ktor, Netty)          │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  POST /api/forecast  (ForecastRoutes.kt)                │ │
+│  └────────────────────────────────────────────────────────┘ │
+│    ↓                              ↓                          │
+│  ┌──────────────────┐   ┌──────────────────────────────┐   │
+│  │ AstronomyService  │   │ WeatherService                │   │
+│  │ - commons-suncalc │   │ - Open-Meteo (free, no key)   │   │
+│  │ - timeshape (tz)  │   │ - cloud cover by altitude      │   │
+│  │ - sun angles/azimuth│ │ - 30-min in-memory cache      │   │
+│  └──────────────────┘   └──────────────────────────────┘   │
+│    ↓                              ↓                          │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  ScoringService                                          │ │
+│  │  Altitude-aware cloud geometry + visibility + conditions │ │
+│  │  + color potential → forecast_quality                    │ │
+│  └────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────┘
+          ↓ JSON response (ForecastResponse)
+          ↓ astronomy + weather + forecast_quality
+┌───────────────────────────────────────────────────────────┐
+│      Android: Display & Local Storage                      │
+│  - Render map (osmdroid), forecast cards, quality badge     │
+│  - Save location to favorites (Room, capped at 5)           │
+│  - Apply units/theme from settings (DataStore)               │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## Data Flow Example
 
-**User Action:** "Search for 'Monument Valley, AZ' on 2024-06-15"
+**User Action:** Enter coordinates for Monument Valley, AZ on 2026-07-15, tap "Get Forecast"
 
-1. **Frontend**: User enters location in search box
-2. **Geocoding**: LocationSearch component calls geocoding API (built into maps library or separate service) → returns {lat: 37.0, lon: -110.0}
-3. **API Request**: Frontend calls backend:
+1. **Android**: `ForecastScreen` collects lat/lon/date/type from the form, `ForecastViewModel.fetchForecast()` is called
+2. **API Request**: `:core:network`'s `ForecastApi` (Ktor client) calls the backend:
    ```
    POST /api/forecast
    {
      "latitude": 37.0,
      "longitude": -110.0,
-     "date": "2024-06-15",
-     "type": "both"  // or "sunrise" | "sunset"
+     "date": "2026-07-15",
+     "type": "both"
    }
    ```
-4. **Backend Processing**:
-   - Astronomy service calculates sun position for Monument Valley at sunrise/sunset
-   - Weather service fetches 7-day forecast for that location
-   - Scoring service evaluates conditions → returns quality score
-5. **Response**:
-   ```json
-   {
-     "location": "Monument Valley, AZ",
-     "date": "2024-06-15",
-     "sunrise": {
-       "time": "05:34 MST",
-       "azimuth": 62.3,
-       "altitude_at_horizon": -0.8,
-       "altitude_at_6deg": -6.2,
-       "altitude_at_18deg": -18.1,
-       "twilight_start": "04:52 MST"
-     },
-     "sunset": {
-       "time": "20:12 MST",
-       "azimuth": 297.5,
-       ...
-     },
-     "weather": {
-       "cloud_cover": 15,
-       "visibility": 10,
-       "conditions": "clear"
-     },
-     "quality_score": "excellent",
-     "accuracy_warning": false  // true if >48 hours
-   }
-   ```
-6. **Frontend Display**: ForecastScreen renders map with sun positions, displays details, shows quality badge
+3. **Backend Processing** (`ForecastRoutes.kt`):
+   - Validates input (lat/lon range, date within 7 days)
+   - `AstronomyService` calculates sun position for the coordinates at sunrise/sunset
+   - `WeatherService` fetches weather from Open-Meteo, sampled at the nearest hour to the actual sunset instant (or sunrise instant for `type=sunrise`)
+   - `ScoringService` evaluates conditions → returns `forecast_quality` with a full breakdown
+4. **Response**: see API_SPEC.md for the full JSON shape (astronomy, weather including cloud-by-altitude, forecast_quality with breakdown and color_timeline)
+5. **Android Display**: `ForecastMapper` converts the network DTOs to domain types, `ForecastScreen` renders the osmdroid map with azimuth overlays, sunrise/sunset cards, weather summary (unit-aware), and the color timeline
 
-## Component Responsibilities
+## Module Responsibilities
 
-### Frontend Components
+### Android modules
 
-**HomeScreen**
-- Location search input
-- GPS auto-detect button
-- Recent/favorite location quick access
-- Navigation to ForecastScreen
+**`:core:model`** — Plain Kotlin domain types shared across the app (`Forecast`, `WeatherConditions`, `FavoriteLocation`, `UserSettings`, etc.), no Android or serialization dependencies.
 
-**LocationSearch** (Component)
-- Text input with autocomplete
-- Calls geocoding service
-- Handles error states
+**`:core:network`** — Ktor HTTP client, `@Serializable` DTOs matching the backend's JSON contract, and a mapper from DTOs to domain types. Exposes `ForecastApi`.
 
-**DatePicker** (Component)
-- Allows selection of 7 days ahead
-- Disables dates beyond 7 days
-- Shows current date as default
+**`:core:database`** — Room database and DAO for favorite locations, plus a `FavoritesRepository` that maps entities to domain types and enforces the 5-favorite cap.
 
-**ForecastScreen**
-- Receives forecast data from API
-- Orchestrates display of map, details, quality badge
-- Handles save-to-favorites action
+**`:core:datastore`** — Jetpack DataStore (Preferences) wrapped in a `SettingsRepository` exposing a `Flow<UserSettings>` (units, theme).
 
-**MapView** (Component)
-- Displays location on map
-- Overlays sunrise/sunset azimuths as lines/arrows
-- Shows cardinal directions (N, S, E, W)
+**`:core:designsystem`** — Material 3 theme (light/dark color schemes, typography).
 
-**ForecastDetails** (Component)
-- Tabbed view: Sunrise | Sunset
-- Shows:
-  - Times (with timezone)
-  - Altitude angles (0°, -6°, -18°)
-  - Azimuth
-  - Twilight times
-  - Weather data (cloud %, visibility)
+**`:feature:forecast`** — The main screen: location/date/type form, osmdroid map with azimuth lines, sunrise/sunset cards, weather summary, color timeline, favorites quick-picker, and the "save as favorite" dialog.
 
-**QualityScore** (Component)
-- Visual badge (Excellent / Good / Fair / Poor)
-- Breakdown of factors contributing to score
-- Accuracy disclaimer if >48 hours
+**`:feature:favorites`** — Full favorites management screen (list + delete).
 
-**SavedLocationsScreen**
-- List of locally stored favorite locations
-- Quick-access to past forecasts
-- Delete location option
+**`:feature:settings`** — Units and theme picker screen.
 
-**SettingsScreen**
-- Unit preference (12/24 hour, metric/imperial)
-- Timezone override (optional)
-- About, version info
+**`:app`** — Hilt `Application`, `MainActivity` (applies the theme reactively from `SettingsRepository`), and the `NavHost` wiring the three feature screens together.
 
-### Backend Services
+### Backend services
 
-**Astronomy Service**
-- Input: {latitude, longitude, date}
-- Output: {sunrise_time, sunset_time, sun_angles, azimuths, twilight_times}
-- Library: `pymeeus` (Python) or `astronomy-engine` (Node.js)
-- Accuracy: ±1 minute for times, ±0.1° for angles
+**`AstronomyService`** (`server/.../services/AstronomyService.kt`)
+- Input: `{latitude, longitude, date}`
+- Output: sunrise/sunset times, azimuths, twilight times (civil/nautical/astronomical), all as precise instants
+- Library: `commons-suncalc`; timezone lookup via `timeshape` (fully offline, no geocoding API)
+- Accuracy: ±1 minute for times, ±0.1° for angles, ±1° for azimuth
 
-**Weather Service**
-- Input: {latitude, longitude, date}
-- Output: {cloud_cover_percent, visibility_km, conditions, ...}
-- Calls OpenWeatherMap API (or alternative)
-- Caches results to minimize API calls (TTL: 30 min)
+**`WeatherService`** (`server/.../services/WeatherService.kt`)
+- Input: `{latitude, longitude, dateStr, targetInstant}`
+- Output: cloud cover (blended + low/mid/high), visibility, conditions, temperature, humidity, wind
+- Calls Open-Meteo (free, no API key)
+- Caches the raw hourly forecast per `(lat, lon, date)` for 30 minutes; the nearest-hour sample is picked fresh on every call from the actual sunrise/sunset instant, not a fixed time
 
-**Forecast Scoring Service**
-- Input: {astronomy_data, weather_data}
-- Output: {quality_score, quality_level, reasoning}
-- Scoring algorithm: See FORECAST_SCORING.md
+**`ScoringService`** (`server/.../services/ScoringService.kt`)
+- Input: weather data + color timeline
+- Output: `forecast_quality` — score, level, label, full breakdown, reasoning
+- Algorithm: see FORECAST_SCORING.md, including the altitude-aware cloud geometry rating
 
-**Forecast Route**
-- POST /api/forecast
-- Orchestrates calls to above services
-- Returns combined JSON response
+**`ForecastRoutes`** (`server/.../routes/ForecastRoutes.kt`)
+- `POST /api/forecast`
+- Orchestrates calls to the above services, validates input, returns the combined JSON response
 
-## Local Storage (AsyncStorage)
+## Local Storage
 
-Frontend maintains two local data structures:
+**Favorites** (Room, `:core:database`): a `favorite_locations` table (id, name, latitude, longitude, createdAt), capped at 5 entries, exposed as a reactive `Flow` so the forecast screen's quick-picker and the favorites management screen stay in sync automatically.
 
-**Favorite Locations:**
-```javascript
-{
-  "favorite_locations": [
-    {
-      id: "loc_1",
-      name: "Monument Valley, AZ",
-      latitude: 37.0,
-      longitude: -110.0,
-      added_date: "2024-05-01"
-    },
-    ...
-  ]
-}
-```
-
-**User Settings:**
-```javascript
-{
-  "settings": {
-    "time_format": "12h",  // or "24h"
-    "temperature_unit": "F",  // or "C"
-    "distance_unit": "miles",  // or "km"
-    "timezone_override": null  // or "America/Denver"
-  }
-}
-```
+**Settings** (Jetpack DataStore, `:core:datastore`): a `Preferences` DataStore with `units` and `theme` keys, exposed as a `Flow<UserSettings>` that `MainActivity` collects to apply the theme live, and `ForecastViewModel` collects to drive unit-aware formatting.
 
 ## Error Handling
 
-**Frontend Error Cases:**
-- Geolocation permission denied → Prompt to enable
-- Location not found → Show error message, suggest alternatives
-- No internet → Show offline message
-- API timeout → Retry with backoff
+**Android:**
+- Network/API errors surface as a typed `ForecastResult.Error(code, message)` (not raw exceptions), letting the UI react to specific backend error codes
+- Form validation (lat/lon range) happens client-side before a request is even sent
 
-**Backend Error Cases:**
-- Invalid coordinates → Return 400 Bad Request
-- Weather API rate limit → Return cached result or 429
-- Astronomy calculation error → Return 500 (should be rare)
+**Backend:**
+- Invalid coordinates/date/type → 400 `INVALID_REQUEST` or 422 `DATE_OUT_OF_RANGE`
+- Weather API failure → 500 `CALCULATION_ERROR` with a `request_id`
+- Rate limiting → 429 `RATE_LIMITED` with `retry_after`
 
 ## Performance Considerations
 
-1. **API Caching**: Backend caches weather results for 30 minutes per location
-2. **Network**: Minimize request size, compress responses
-3. **Battery**: Only use GPS on explicit user action, not continuous polling
-4. **Storage**: Favorite locations stored locally, no sync required
+1. **API Caching**: backend caches raw weather data for 30 minutes per `(lat, lon, date)` — shared across sunrise/sunset/both requests for the same location and date
+2. **Network**: no CORS concerns (native client, not a browser); HTTPS expected in production
+3. **Battery**: no background location polling — the app takes explicit lat/lon input, not continuous GPS
+4. **Storage**: favorites and settings stored locally, no sync required
 
 ## Security
 
-- API keys (weather, maps) stored server-side only (never in frontend code)
-- No user authentication required for V1
-- Rate limiting on backend endpoints (prevent abuse)
-- Input validation on all API endpoints
+- No third-party API keys anywhere in the stack (Open-Meteo and osmdroid are both keyless)
+- No user authentication for V1
+- Rate limiting on the backend (100 req/min/IP)
+- Input validation on all API parameters
 
 ## Deployment Architecture
 
-**Frontend:**
-- Built via EAS Build (managed by Expo)
-- Distributed via App Store (iOS) and Google Play (Android)
-- Configuration in `app.json` and EAS build profiles
+**Android app:**
+- Built via Gradle (`android/`), signed and distributed through Google Play
+- No API keys/secrets to configure at build time
 
 **Backend:**
-- Containerized (Docker) for flexibility
-- Deployed to Vercel, Railway, or Heroku
-- Environment variables for API keys
-- Can scale horizontally if traffic increases
+- Plain JVM application (`server/`), runs via `./gradlew run` or a packaged jar
+- Containerizable (Docker) for deployment to any host
+- No environment variables required beyond an optional `PORT`
+- Can scale horizontally if traffic increases (stateless aside from the in-memory weather cache)

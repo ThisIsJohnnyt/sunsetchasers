@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Debug builds only: lets the app reach the local Ktor backend over
+         plain HTTP during development (10.0.2.2 is the emulator's alias for
+         the host machine's localhost; the numeric IP is the host machine's
+         LAN address, needed when running on a physical device instead of
+         the emulator). Release builds have no such config and stay
+         HTTPS-only by default. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">192.168.1.59</domain>
+    </domain-config>
+</network-security-config>

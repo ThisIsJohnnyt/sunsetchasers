@@ -13,101 +13,86 @@ This app provides 7-day forecasts with detailed sun position data (angle, azimut
 
 ## Project Status
 
-**Current Phase:** V1.0 Architecture & Specification
+**Current Phase:** Android app functional end-to-end against a live backend. Core V1 feature set (forecast, map, favorites, settings) is implemented and verified; remaining work is real-device testing and a Play Store release.
 
 ## V1.0 Feature Set
 
 ### Core Features
-- **Location Search** — Search for locations by name or auto-detect via GPS
+- **Location Entry** — Enter coordinates directly (no geocoding/search API configured yet — see "Notes for Development")
 - **Date Selection** — View forecasts for today through 7 days ahead
-- **Forecast Accuracy Disclaimer** — Warn users that forecasts >48 hours have lower accuracy
-- **Map View** — Display sunrise/sunset positions on a map with azimuth overlay
+- **Forecast Accuracy Disclaimer** — Warns when forecasts are >48 hours out
+- **Map View** — OpenStreetMap tiles (via osmdroid, free, no API key) with sunrise/sunset azimuth lines overlaid
 - **Detailed Astronomy Data**:
   - Sunrise/sunset times
-  - Sun altitude angles (-18°, -6°, 0°, peak)
+  - Sun altitude angles (-18°, -6°, 0°, peak) and a color timeline across them
   - Azimuth (compass direction)
   - Civil/nautical/astronomical twilight times
-- **Weather Integration**:
-  - Cloud cover percentage
-  - Visibility
-  - Atmospheric conditions
-- **Forecast Quality Score** — "Good," "Fair," "Poor" rating based on combined data
-- **Favorite Locations** — Save 3-5 locations locally (no sign-in required)
-- **Settings** — Units (metric/imperial), timezone handling
+- **Weather Integration** (via [Open-Meteo](https://open-meteo.com), free and keyless):
+  - Cloud cover — blended **and** by altitude (low/mid/high), which is what actually predicts sunset/sunrise color
+  - Visibility, temperature, humidity, wind
+- **Forecast Quality Score** — "Excellent/Good/Fair/Poor" rating, with an altitude-aware cloud-geometry component (see FORECAST_SCORING.md)
+- **Favorite Locations** — Save up to 5 locations locally (Room database, no sign-in required)
+- **Settings** — Units (metric/imperial) and theme (system/light/dark), persisted via Jetpack DataStore
 
 ### Out of Scope for V1
 - User accounts/cloud sync
+- Location search/geocoding (currently lat/lon entry only)
 - AR overlays (future v2+)
 - Camera integration
 - Social sharing
 - Push notifications
 - Historical data analysis
+- iOS (Android-only for now)
 
 ## Tech Stack
 
-### Frontend
-- **React Native** with **Expo** (JavaScript)
-- **@react-native-maps/maps** for map display
-- **AsyncStorage** for local persistence (favorite locations)
-- **EAS Build** for cloud builds (iOS/Android)
-- **Expo Go** for iOS development testing
+### Backend (`server/`)
+- **Kotlin** + **Ktor** (Netty engine)
+- Astronomy: [`commons-suncalc`](https://shredzone.org/maven/commons-suncalc/) + [`timeshape`](https://github.com/RomanIakovlev/timeshape) for offline timezone lookup
+- Weather: **Open-Meteo** — free, no API key
+- Testing: JUnit 5, Ktor test host, MockK
+- Deployment: any JVM host (Docker-friendly); no external API keys required
 
-### Backend
-- **Node.js** or **Python** (minimal, stateless API)
-- Astronomy library: **pymeeus** (Python) or **astronomy-engine** (Node.js)
-- Weather API: TBD (OpenWeatherMap, WeatherAPI, NOAA)
-- Deployment: Vercel, Railway, or Heroku
+### Android app (`android/`)
+- **Kotlin** + **Jetpack Compose**, Material 3
+- Multi-module: `:core:model`, `:core:network` (Ktor client), `:core:database` (Room), `:core:datastore` (Jetpack DataStore), `:core:designsystem`, `:feature:forecast`, `:feature:favorites`, `:feature:settings`, `:app`
+- DI: **Hilt**
+- Map: **osmdroid** (OpenStreetMap tiles, free, no API key)
+- Build: Gradle (Kotlin DSL), Android Gradle Plugin, targeting minSdk 26
+
+There's also a legacy `backend/` (Node.js) directory kept only as a historical reference from an earlier prototype — it is not used by the app; `server/` is the real backend.
 
 ## Getting Started
 
-### Prerequisites
-- Node.js 16+ or Python 3.8+
-- Expo CLI: `npm install -g expo-cli`
-- EAS CLI: `npm install -g eas-cli`
-- iOS device with Expo Go app (for iOS testing)
-- Android emulator or device for Android testing
+See **[GETTING_STARTED.md](GETTING_STARTED.md)** for full setup instructions (JDK, Android Studio/SDK, running the server, running the Android app).
 
-### Frontend Setup
-```bash
-cd frontend
-npm install
-npx expo start
-```
+Quick version — no API keys needed anywhere:
 
-### Backend Setup
 ```bash
-cd backend
-npm install  # or pip install -r requirements.txt
-cp .env.example .env
-# Add your weather API key to .env
-npm start
+# Backend
+cd server
+./gradlew run          # starts on http://localhost:8080
+
+# Android app
+cd android
+./gradlew assembleDebug   # or open in Android Studio and Run
 ```
 
 ## Key Documentation
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System design, data flow, component relationships
-- **[API_SPEC.md](API_SPEC.md)** — Backend endpoint specifications and payloads
-- **[FORECAST_SCORING.md](FORECAST_SCORING.md)** — Algorithm for quality scoring
-- **[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)** — Phased breakdown of tasks
-- **[GETTING_STARTED.md](GETTING_STARTED.md)** — Quick start guide for beginning development
-
-## Development Phases
-
-**Phase 1:** Backend foundation (astronomy, weather, scoring)  
-**Phase 2:** Frontend setup (home screen, location search)  
-**Phase 3:** Forecast display (map, details)  
-**Phase 4:** Local storage (favorites, settings)  
-**Phase 5:** Testing & deployment  
-
-Est. timeline: ~9 weeks part-time
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System design, data flow, module responsibilities
+- **[API_SPEC.md](API_SPEC.md)** — Backend endpoint specification and payloads
+- **[FORECAST_SCORING.md](FORECAST_SCORING.md)** — Algorithm for quality scoring, including the cloud-geometry formula
+- **[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)** — What's done and what's left
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** — Environment setup and how to run everything
 
 ## Notes for Development
 
-- All times should be timezone-aware
-- Astronomy calculations must be accurate to ±1 minute for sun times
-- Weather forecasts degrade significantly after 48 hours (clearly communicate this)
-- Map should show both sunrise and sunset positions simultaneously
-- Consider battery usage when using GPS and repeated API calls
+- All times are timezone-aware (IANA timezone looked up offline per coordinate)
+- Astronomy calculations are accurate to ±1 minute for sun times
+- Weather forecasts degrade significantly after 48 hours (the API returns `accuracy_warning: true`, and the UI should surface it)
+- The map shows both sunrise and sunset azimuth lines simultaneously
+- No location search/geocoding is wired up yet — the UI takes raw latitude/longitude. `location.name` in API responses currently falls back to `"Lat X, Lon Y"`.
 
 ## License
 
