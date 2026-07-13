@@ -7,6 +7,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
@@ -45,6 +46,7 @@ class WeatherService(
     private val nowMillis: () -> Long = System::currentTimeMillis
 ) {
     companion object {
+        private val logger = LoggerFactory.getLogger(WeatherService::class.java)
         private const val CACHE_TTL_MILLIS = 30 * 60 * 1000L
 
         private val WEATHER_CODE_CONDITIONS: Map<Int, String> = mapOf(
@@ -148,6 +150,7 @@ class WeatherService(
             cache[cacheKey] = CacheEntry(response.hourly, nowMillis())
             return response.hourly
         } catch (e: Exception) {
+            logger.error("Open-Meteo request failed for ($lat, $lon): ${e.javaClass.name}: ${e.message}", e)
             throw WeatherApiException("Weather API error: ${e.message}")
         }
     }

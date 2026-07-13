@@ -16,6 +16,15 @@ RUN ./gradlew installDist --no-daemon
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
+# eclipse-temurin's JRE image doesn't reliably ship an up-to-date CA bundle,
+# which can make outbound HTTPS calls (Open-Meteo) fail a TLS handshake
+# immediately — install/refresh it explicitly rather than rely on the base
+# image having it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/build/install/sunset-chasers-server /app
 
 # No database, only a 30-min in-memory weather cache — a modest heap fits
