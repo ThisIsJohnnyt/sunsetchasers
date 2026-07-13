@@ -5,6 +5,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.slf4j.LoggerFactory
@@ -131,7 +134,7 @@ class WeatherService(
 
     private suspend fun fetchHourly(lat: Double, lon: Double, cacheKey: String): OpenMeteoHourly {
         try {
-            val response: OpenMeteoResponse = httpClient.get("https://api.open-meteo.com/v1/forecast") {
+            val httpResponse: HttpResponse = httpClient.get("https://api.open-meteo.com/v1/forecast") {
                 parameter("latitude", lat)
                 parameter("longitude", lon)
                 parameter("timezone", "UTC")
@@ -145,10 +148,19 @@ class WeatherService(
                     "cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility," +
                         "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code"
                 )
-            }.body()
+            }
 
+            if (!httpResponse.status.isSuccess()) {
+                val bodyText = httpResponse.bodyAsText()
+                logger.error("Open-Meteo returned ${httpResponse.status} for ($lat, $lon): $bodyText")
+                throw WeatherApiException("Open-Meteo returned ${httpResponse.status}")
+            }
+
+            val response: OpenMeteoResponse = httpResponse.body()
             cache[cacheKey] = CacheEntry(response.hourly, nowMillis())
             return response.hourly
+        } catch (e: WeatherApiException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Open-Meteo request failed for ($lat, $lon): ${e.javaClass.name}: ${e.message}", e)
             throw WeatherApiException("Weather API error: ${e.message}")

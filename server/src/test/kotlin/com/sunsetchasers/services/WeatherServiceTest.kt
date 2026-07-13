@@ -186,6 +186,28 @@ class WeatherServiceTest {
     }
 
     @Test
+    fun `handles a non-success status (e_g_ rate limited) without a raw deserialization crash`() = runTest {
+        val engine = MockEngine {
+            respond(
+                """{"error":true,"reason":"Minutely API request limit exceeded"}""",
+                HttpStatusCode.TooManyRequests,
+                headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        }
+        val service = WeatherService(clientFor(engine))
+
+        var thrown: WeatherApiException? = null
+        try {
+            service.getWeather(40.7128, -74.006, "2025-06-21", Instant.parse("2025-06-21T12:00:00Z"))
+        } catch (e: WeatherApiException) {
+            thrown = e
+        }
+
+        assertNotNull(thrown)
+        assertTrue(thrown!!.message!!.contains("429") || thrown.message!!.contains("Too Many Requests"))
+    }
+
+    @Test
     fun `maps WMO weather codes to condition strings`() {
         assertEquals("clear", WeatherService.weatherCodeToCondition(0))
         assertEquals("mostly clear", WeatherService.weatherCodeToCondition(1))
