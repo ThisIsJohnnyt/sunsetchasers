@@ -114,7 +114,22 @@ See [API_SPEC.md](API_SPEC.md) for the full response shape.
 2. Start an emulator (API 26+) via Android Studio's Device Manager, or connect a physical device with USB debugging enabled.
 3. Run the app (Android Studio's Run button, or `./gradlew installDebug`).
 
-**Backend URL:** the app expects the backend reachable at the emulator's host-loopback address (`10.0.2.2:8080` for the standard Android emulator talking to a backend running on your machine) — check `android/core/network`'s base URL configuration if you're pointing at a different host.
+**Backend URL:** defaults to a LAN IP for testing on a physical device (see `android/core/network/build.gradle.kts`). For the emulator, override it to `10.0.2.2:8080` (the emulator's alias for host localhost) via one of the methods below. To point the app at a different backend (LAN IP, emulator alias, or a hosted URL — see "Hosting for Remote Testing" below) without editing source, set `backendBaseUrl` either:
+- in `android/local.properties` (gitignored, per-machine): `backendBaseUrl=http://10.0.2.2:8080/`, or
+- as a one-off Gradle property: `./gradlew assembleDebug -PbackendBaseUrl=http://10.0.2.2:8080/`
+
+---
+
+## Hosting for Remote Testing
+
+If you want to test the app without your dev machine running the backend (e.g. while traveling), `server/` deploys as-is to [Render](https://render.com)'s free tier — no credit card required:
+
+1. **Deploy**: create a free Render account, connect this GitHub repo, and create a new **Web Service** with root directory `server/`. Render auto-detects the `server/Dockerfile` and builds from it — no other configuration needed. The build produces a runnable JVM distribution (`./gradlew installDist`) in a slim JRE runtime image, with the heap tuned (`-Xmx400m`) to fit Render's free-tier 512MB RAM.
+2. **Get the URL**: Render assigns a public `https://<name>.onrender.com` address. Confirm it works: `curl https://<name>.onrender.com/health` should return `{"status":"ok"}`.
+3. **Point a build at it**: rebuild the Android app with `backendBaseUrl` set to that URL (via `local.properties` or `-PbackendBaseUrl=`, as above) — no `network_security_config.xml` change needed since Render serves HTTPS by default.
+4. **Avoid the cold-start delay (optional)**: Render's free web services sleep after 15 minutes of inactivity and take 30-60s to wake on the next request. To keep it warm the whole time you're away, sign up for a free [UptimeRobot](https://uptimerobot.com) (or similar) account and add an HTTP(S) monitor hitting `https://<name>.onrender.com/health` every 5 minutes. This fits comfortably inside Render's 750 free hours/month (a full month is ~720 hours) for a single always-on service.
+
+The `/health` endpoint (`server/.../routes/HealthRoutes.kt`) is intentionally outside the rate limiter so keepalive pings never compete with real forecast traffic.
 
 ---
 

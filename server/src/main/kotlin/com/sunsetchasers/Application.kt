@@ -2,14 +2,13 @@ package com.sunsetchasers
 
 import com.sunsetchasers.plugins.installErrorHandling
 import com.sunsetchasers.routes.forecastRoutes
+import com.sunsetchasers.routes.healthRoutes
 import com.sunsetchasers.services.WeatherService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
-import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
-import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -17,8 +16,6 @@ import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.origin
 import io.ktor.server.plugins.ratelimit.RateLimit
-import io.ktor.server.response.respondText
-import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.Json
 import org.slf4j.event.Level
@@ -55,9 +52,7 @@ fun Application.module() {
     installErrorHandling()
 
     routing {
-        get("/health") {
-            call.respondText("""{"status":"ok"}""", ContentType.Application.Json)
-        }
+        healthRoutes()
         forecastRoutes(weatherService)
     }
 }
